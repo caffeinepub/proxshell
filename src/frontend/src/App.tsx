@@ -139,7 +139,7 @@ export default function App() {
   const isMobile = useIsMobile();
   const { actor, isFetching: actorFetching } = useActor();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [urlInput, setUrlInput] = useState("google.com");
+  const [urlInput, setUrlInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
