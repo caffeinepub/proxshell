@@ -1,151 +1,20 @@
 import { Toaster } from "@/components/ui/sonner";
-import { useActor } from "@/hooks/useActor";
 import {
-  AlertTriangle,
-  CheckCheck,
-  Copy,
-  ExternalLink,
   Gamepad2,
   Globe,
-  Loader2,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Search,
-  Zap,
+  Keyboard,
+  Moon,
+  Settings,
+  Sun,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
 import { GamesSidebar } from "./GamesSidebar";
-
-type ResponseType = "html" | "text" | "idle";
-type ActiveMode = "search" | "proxy";
-
-interface DDGRelatedTopic {
-  Text?: string;
-  FirstURL?: string;
-  Icon?: { URL?: string };
-  Name?: string;
-  Topics?: DDGRelatedTopic[];
-}
-
-interface DDGResult {
-  Text?: string;
-  FirstURL?: string;
-  Icon?: { URL?: string };
-}
-
-interface DDGResponse {
-  Heading?: string;
-  AbstractText?: string;
-  AbstractURL?: string;
-  Answer?: string;
-  AnswerType?: string;
-  RelatedTopics?: DDGRelatedTopic[];
-  Results?: DDGResult[];
-}
-
-interface SearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-  icon?: string;
-}
-
-function detectResponseType(text: string): ResponseType {
-  const trimmed = text.trimStart();
-  if (
-    trimmed.startsWith("<!DOCTYPE") ||
-    trimmed.startsWith("<!doctype") ||
-    trimmed.startsWith("<html") ||
-    trimmed.startsWith("<HTML")
-  ) {
-    return "html";
-  }
-  return "text";
-}
-
-function injectBaseTag(html: string, targetUrl: string): string {
-  try {
-    const u = new URL(targetUrl);
-    const base = `${u.protocol}//${u.host}`;
-    const baseTag = `<base href="${base}/">`;
-    if (/<head[\s>]/i.test(html)) {
-      return html.replace(/(<head[^>]*>)/i, `$1${baseTag}`);
-    }
-    if (/<html[\s>]/i.test(html)) {
-      return html.replace(/(<html[^>]*>)/i, `$1${baseTag}`);
-    }
-    return baseTag + html;
-  } catch {
-    return html;
-  }
-}
-
-function isErrorResponse(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    lower.startsWith("error") ||
-    lower.includes("canister error") ||
-    lower.includes("rejection") ||
-    (lower.includes("failed") && text.length < 300)
-  );
-}
-
-function extractTitle(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-function parseDDGResults(data: DDGResponse): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  if (data.Results) {
-    for (const r of data.Results) {
-      if (r.FirstURL && r.Text) {
-        results.push({
-          title: extractTitle(r.FirstURL),
-          url: r.FirstURL,
-          snippet: r.Text,
-          icon: r.Icon?.URL || undefined,
-        });
-      }
-    }
-  }
-
-  const flatTopics: DDGRelatedTopic[] = [];
-  const flatten = (topics: DDGRelatedTopic[]) => {
-    for (const t of topics) {
-      if (t.Topics && t.Topics.length > 0) {
-        flatten(t.Topics);
-      } else if (t.FirstURL && t.Text) {
-        flatTopics.push(t);
-      }
-    }
-  };
-  if (data.RelatedTopics) flatten(data.RelatedTopics);
-
-  for (const t of flatTopics.slice(0, 15)) {
-    if (t.FirstURL && t.Text) {
-      results.push({
-        title: extractTitle(t.FirstURL),
-        url: t.FirstURL,
-        snippet: t.Text,
-        icon: t.Icon?.URL || undefined,
-      });
-    }
-  }
-
-  return results;
-}
+import { useIsMobile } from "./hooks/use-mobile";
 
 // Particle canvas component
-function ParticleCanvas() {
+function ParticleCanvas({ darkMode }: { darkMode: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -202,7 +71,7 @@ function ParticleCanvas() {
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        const alpha = Math.floor(p.opacity * 255)
+        const alpha = Math.floor(p.opacity * (darkMode ? 0.5 : 1) * 255)
           .toString(16)
           .padStart(2, "0");
         ctx.fillStyle = `#22c55e${alpha}`;
@@ -218,7 +87,7 @@ function ParticleCanvas() {
       cancelAnimationFrame(animId);
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [darkMode]);
 
   return (
     <canvas
@@ -229,180 +98,154 @@ function ParticleCanvas() {
   );
 }
 
+function openInBlankTab(targetUrl: string) {
+  let url = targetUrl.trim();
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = `https://${url}`;
+  }
+
+  const newTab = window.open("about:blank", "_blank");
+  if (!newTab) return;
+
+  const html = `<!DOCTYPE html>
+<html style="margin:0;padding:0;height:100%;width:100%;">
+<head>
+  <meta charset="UTF-8" />
+  <title>${url}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <iframe src="${url}" allowfullscreen allow="autoplay; fullscreen; microphone; camera"></iframe>
+</body>
+</html>`;
+
+  newTab.document.open();
+  newTab.document.write(html);
+  newTab.document.close();
+}
+
 export default function App() {
-  const { actor, isFetching: actorLoading } = useActor();
-
-  // Sidebar state
+  const isMobile = useIsMobile();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // Search state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(
-    null,
-  );
-  const [searchAbstract, setSearchAbstract] = useState<{
-    heading: string;
-    text: string;
-    url: string;
-    answer: string;
-  } | null>(null);
-  const [searchError, setSearchError] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Proxy state (used by Via Proxy button and fullscreen)
-  const [url, setUrl] = useState("");
-  const [response, setResponse] = useState<string | null>(null);
-  const [responseType, setResponseType] = useState<ResponseType>("idle");
-  const [loading, setLoading] = useState(false);
-  const [isError, setIsError] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const [activeMode, setActiveMode] = useState<ActiveMode>("search");
-
-  // Fullscreen state
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Close fullscreen on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isFullscreen) {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen]);
-
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) {
-      toast.error("Enter a search query");
-      searchInputRef.current?.focus();
-      return;
-    }
-
-    setSearchLoading(true);
-    setSearchResults(null);
-    setSearchAbstract(null);
-    setSearchError(false);
-    setActiveMode("search");
-    setResponse(null);
-    setResponseType("idle");
-    setIsFullscreen(false);
-
+  const [urlInput, setUrlInput] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
     try {
-      const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(searchQuery)}&format=json&no_html=1&skip_disambig=1&no_redirect=1`;
-      const res = await fetch(apiUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: DDGResponse = await res.json();
-
-      const results = parseDDGResults(data);
-      setSearchResults(results);
-
-      const hasAbstract = data.AbstractText || data.Answer || data.Heading;
-      if (hasAbstract) {
-        setSearchAbstract({
-          heading: data.Heading || "",
-          text: data.AbstractText || data.Answer || "",
-          url: data.AbstractURL || "",
-          answer: data.Answer || "",
-        });
-      }
-
-      if (results.length === 0 && !hasAbstract) {
-        toast.info("No instant results — try a more specific query");
-      } else {
-        toast.success(`Found ${results.length} results`);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setSearchError(true);
-      setSearchResults([]);
-      toast.error(`Search failed: ${msg}`);
-    } finally {
-      setSearchLoading(false);
+      return localStorage.getItem("proxshell-dark") === "true";
+    } catch {
+      return false;
     }
-  }, [searchQuery]);
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSearch();
+  });
+  const [panicKey, setPanicKey] = useState(() => {
+    try {
+      return localStorage.getItem("proxshell-panic-key") || "";
+    } catch {
+      return "";
     }
-  };
+  });
+  const [pendingPanicKey, setPendingPanicKey] = useState("");
+  const [isCapturing, setIsCapturing] = useState(false);
+  const panicInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const loadThroughProxy = useCallback(
-    async (targetUrl: string) => {
-      if (!actor) {
-        toast.error("Backend not ready");
+  useEffect(() => {
+    try {
+      localStorage.setItem("proxshell-dark", String(darkMode));
+    } catch {
+      /* ignore */
+    }
+  }, [darkMode]);
+
+  // Global panic key listener
+  useEffect(() => {
+    if (isMobile || !panicKey) return;
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger when typing in inputs
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
         return;
       }
-      setLoading(true);
-      setResponse(null);
-      setIsError(false);
-      setActiveMode("proxy");
-      setUrl(targetUrl);
-      setIsFullscreen(false);
-
-      try {
-        const result = await actor.getURL(targetUrl);
-        const errored = isErrorResponse(result);
-        setIsError(errored);
-        const type = errored ? "text" : detectResponseType(result);
-        const finalResult =
-          !errored && type === "html"
-            ? injectBaseTag(result, targetUrl)
-            : result;
-        setResponse(finalResult);
-        setResponseType(type);
-        if (errored) {
-          toast.error("Request returned an error");
-        } else {
-          toast.success("Page loaded through proxy");
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setIsError(true);
-        setResponse(msg);
-        setResponseType("text");
-        toast.error("Request failed");
-      } finally {
-        setLoading(false);
+      if (e.key === panicKey) {
+        window.location.href = "https://classroom.google.com/";
       }
-    },
-    [actor],
-  );
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [panicKey, isMobile]);
 
-  const handleCopy = async () => {
-    if (!response) return;
-    await navigator.clipboard.writeText(response);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("Copied to clipboard");
+  const handleNavigate = () => {
+    if (!urlInput.trim()) return;
+    openInBlankTab(urlInput);
+    setUrlInput("");
   };
 
-  const handleReset = () => {
-    setUrl("");
-    setResponse(null);
-    setResponseType("idle");
-    setIsError(false);
-    setSearchQuery("");
-    setSearchResults(null);
-    setSearchAbstract(null);
-    setSearchError(false);
-    setActiveMode("search");
-    setIsFullscreen(false);
-    searchInputRef.current?.focus();
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleNavigate();
+    }
   };
 
-  const showSearchResults =
-    activeMode === "search" && (searchResults !== null || searchLoading);
-  const showProxyResult =
-    activeMode === "proxy" && (response !== null || loading);
+  const handlePanicKeyCapture = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Ignore modifier-only keys
+    if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+    setPendingPanicKey(e.key);
+    setIsCapturing(false);
+    panicInputRef.current?.blur();
+  };
+
+  const savePanicKey = () => {
+    if (!pendingPanicKey) return;
+    try {
+      localStorage.setItem("proxshell-panic-key", pendingPanicKey);
+    } catch {
+      /* ignore */
+    }
+    setPanicKey(pendingPanicKey);
+  };
+
+  const clearPanicKey = () => {
+    try {
+      localStorage.removeItem("proxshell-panic-key");
+    } catch {
+      /* ignore */
+    }
+    setPanicKey("");
+    setPendingPanicKey("");
+  };
+
+  const bg = darkMode ? "#0f1117" : "#ffffff";
+  const text = darkMode ? "#e2e8f0" : "#1a1a1a";
+  const muted = darkMode ? "#64748b" : "#6b7280";
+  const cardBg = darkMode ? "#1e2330" : "#ffffff";
+  const borderColor = darkMode ? "rgba(34,197,94,0.2)" : "rgba(34,197,94,0.25)";
+  const inputBg = darkMode ? "#1e2330" : "#ffffff";
 
   return (
-    <div className="min-h-screen flex flex-col bg-white relative">
-      <ParticleCanvas />
+    <div
+      className="min-h-screen flex flex-col relative"
+      style={{
+        background: bg,
+        color: text,
+        transition: "background 0.3s, color 0.3s",
+      }}
+    >
+      <ParticleCanvas darkMode={darkMode} />
 
       {/* Games Sidebar */}
       <GamesSidebar
@@ -412,94 +255,6 @@ export default function App() {
           window.open(gameUrl, "_blank", "noopener,noreferrer");
         }}
       />
-
-      {/* Fullscreen Overlay */}
-      <AnimatePresence>
-        {isFullscreen && response !== null && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 flex flex-col"
-            style={{ background: "rgba(0,0,0,0.92)" }}
-          >
-            {/* Fullscreen toolbar */}
-            <div
-              className="flex items-center justify-between px-4 py-2 flex-shrink-0"
-              style={{
-                background: "rgba(0,0,0,0.7)",
-                borderBottom: "1px solid rgba(34,197,94,0.25)",
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4" style={{ color: "#22c55e" }} />
-                <span className="text-xs font-mono text-green-400 truncate max-w-xs">
-                  {url}
-                </span>
-                {isError ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-900/50 text-red-400 border border-red-700">
-                    <AlertTriangle className="w-3 h-3" />
-                    Error
-                  </span>
-                ) : (
-                  <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
-                    style={{
-                      background: "rgba(34,197,94,0.15)",
-                      color: "#4ade80",
-                      borderColor: "rgba(34,197,94,0.35)",
-                    }}
-                  >
-                    {responseType === "html" ? "HTML" : "Text"}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 hidden sm:block">
-                  Press Esc to exit
-                </span>
-                <button
-                  type="button"
-                  data-ocid="proxy.fullscreen.close_button"
-                  onClick={() => setIsFullscreen(false)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
-                  style={{
-                    background: "rgba(34,197,94,0.15)",
-                    color: "#4ade80",
-                    border: "1px solid rgba(34,197,94,0.3)",
-                  }}
-                  title="Exit fullscreen (Esc)"
-                >
-                  <Minimize2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Exit Fullscreen</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Fullscreen content */}
-            <div className="flex-1 overflow-hidden">
-              {responseType === "html" ? (
-                <iframe
-                  title="proxy-response-fullscreen"
-                  srcDoc={response}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                  className="border-0"
-                  style={{ width: "100%", height: "100%" }}
-                />
-              ) : (
-                <pre
-                  className={`overflow-auto p-6 font-mono text-xs leading-relaxed h-full ${
-                    isError ? "text-red-400" : "text-green-300"
-                  }`}
-                >
-                  {response}
-                </pre>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Header */}
       <header className="relative z-10 pt-10 pb-2 text-center">
@@ -526,481 +281,342 @@ export default function App() {
             <span className="hidden sm:inline">Games</span>
           </button>
 
+          {/* Settings button — top right */}
+          <button
+            type="button"
+            data-ocid="settings.open_modal_button"
+            onClick={() => setSettingsOpen(true)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{
+              background: "rgba(34,197,94,0.1)",
+              color: "#22c55e",
+              border: "1px solid rgba(34,197,94,0.25)",
+            }}
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </button>
+
           <h1
             className="font-display text-5xl font-bold tracking-tight"
             style={{ color: "#22c55e" }}
           >
             ProxShell
           </h1>
-          <p className="mt-1 text-sm font-sans text-muted-foreground tracking-widest uppercase">
-            Proxy Search Engine
+          <p
+            className="mt-1 text-sm font-sans tracking-widest uppercase"
+            style={{ color: muted }}
+          >
+            Proxy Browser
           </p>
-          {actorLoading && (
-            <span
-              data-ocid="app.loading_state"
-              className="inline-flex items-center gap-1 mt-2 text-xs text-muted-foreground"
-            >
-              <Loader2 className="w-3 h-3 animate-spin" />
-              connecting...
-            </span>
-          )}
         </motion.div>
       </header>
 
-      <main className="relative z-10 flex-1 max-w-3xl mx-auto w-full px-4 py-8 flex flex-col gap-8">
-        {/* Search */}
+      <main className="relative z-10 flex-1 max-w-2xl mx-auto w-full px-4 py-12 flex flex-col gap-8 items-center">
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
-          aria-label="Search"
+          className="w-full"
+          aria-label="URL Navigation"
         >
-          <div className="flex gap-2">
-            <div
-              className="flex-1 flex items-center gap-3 px-4 py-3.5 rounded-full bg-white search-shadow border border-border"
-              style={{ borderColor: "rgba(34,197,94,0.25)" }}
-            >
-              <Search
-                className="w-5 h-5 flex-shrink-0"
-                style={{ color: "#22c55e" }}
-              />
-              <input
-                ref={searchInputRef}
-                data-ocid="search.input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="surf the internet."
-                className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none"
-                spellCheck={false}
-              />
-              {searchLoading && (
-                <Loader2
-                  data-ocid="search.loading_state"
-                  className="w-4 h-4 animate-spin flex-shrink-0"
-                  style={{ color: "#22c55e" }}
-                />
-              )}
-            </div>
+          <div
+            className="flex items-center gap-3 px-4 py-3.5 rounded-full border"
+            style={{
+              background: inputBg,
+              borderColor,
+              boxShadow: darkMode
+                ? "0 0 0 1px rgba(34,197,94,0.1)"
+                : "0 2px 12px rgba(34,197,94,0.08)",
+            }}
+          >
+            <Globe
+              className="w-5 h-5 flex-shrink-0"
+              style={{ color: "#22c55e" }}
+            />
+            <input
+              ref={inputRef}
+              data-ocid="url.input"
+              type="text"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="type a url"
+              className="flex-1 bg-transparent text-base outline-none"
+              style={{ color: text }}
+              spellCheck={false}
+              autoComplete="off"
+            />
             <button
               type="button"
-              data-ocid="search.submit_button"
-              onClick={handleSearch}
-              disabled={searchLoading || !searchQuery.trim()}
-              className="px-6 py-3 rounded-full font-semibold text-white text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed glow-btn"
+              data-ocid="url.submit_button"
+              onClick={handleNavigate}
+              disabled={!urlInput.trim()}
+              className="px-5 py-2 rounded-full font-semibold text-white text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "#22c55e" }}
             >
-              {searchLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                "Search"
-              )}
+              Go
             </button>
           </div>
-
-          <div className="flex flex-wrap gap-2 mt-3 px-1">
-            {[
-              "weather today",
-              "latest news",
-              "open source projects",
-              "best recipes",
-            ].map((q) => (
-              <button
-                type="button"
-                key={q}
-                onClick={() => {
-                  setSearchQuery(q);
-                  searchInputRef.current?.focus();
-                }}
-                className="px-3 py-1 rounded-full text-xs font-medium border transition-colors hover:border-green-400 hover:text-green-600"
-                style={{ borderColor: "rgba(34,197,94,0.3)", color: "#4b7a5c" }}
-              >
-                {q}
-              </button>
-            ))}
-          </div>
+          <p className="text-center mt-4 text-xs" style={{ color: muted }}>
+            Press Enter or click Go to open the site in a new tab
+          </p>
         </motion.section>
 
-        {/* Search Results */}
-        <AnimatePresence mode="wait">
-          {showSearchResults && (
-            <motion.section
-              key="search-results"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
-              aria-label="Search Results"
-              data-ocid="search.list"
+        {/* Empty state hint */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 0.6 } }}
+          className="flex flex-col items-center gap-3 text-center mt-4"
+        >
+          <div
+            className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{
+              background: "rgba(34,197,94,0.08)",
+              border: "1px solid rgba(34,197,94,0.2)",
+            }}
+          >
+            <Globe
+              className="w-6 h-6"
+              style={{ color: "rgba(34,197,94,0.5)" }}
+            />
+          </div>
+          <p className="text-sm" style={{ color: muted }}>
+            Type any website URL and browse freely
+          </p>
+        </motion.div>
+      </main>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={() => setSettingsOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              data-ocid="settings.modal"
+              className="rounded-2xl p-6 shadow-2xl"
+              style={{
+                background: cardBg,
+                border: `1px solid ${borderColor}`,
+                color: text,
+                width: isMobile ? "calc(100vw - 2rem)" : "22rem",
+                maxWidth: "22rem",
+              }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {searchLoading ? (
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-bold">Settings</h2>
+                <button
+                  type="button"
+                  data-ocid="settings.close_button"
+                  onClick={() => setSettingsOpen(false)}
+                  className="p-1.5 rounded-lg transition-colors hover:opacity-70"
+                  style={{ color: muted }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Dark / Light Mode Toggle */}
+              <div
+                className="flex items-center justify-between px-4 py-3 rounded-xl"
+                style={{
+                  background: darkMode
+                    ? "rgba(255,255,255,0.05)"
+                    : "rgba(34,197,94,0.05)",
+                  border: `1px solid ${borderColor}`,
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  {darkMode ? (
+                    <Moon className="w-4 h-4" style={{ color: "#22c55e" }} />
+                  ) : (
+                    <Sun className="w-4 h-4" style={{ color: "#22c55e" }} />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {darkMode ? "Dark Mode" : "Light Mode"}
+                    </p>
+                    <p className="text-xs" style={{ color: muted }}>
+                      Switch appearance
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-ocid="settings.darkmode.toggle"
+                  onClick={() => setDarkMode((d) => !d)}
+                  className="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+                  style={{ background: darkMode ? "#22c55e" : "#d1d5db" }}
+                  aria-label="Toggle dark mode"
+                >
+                  <span
+                    className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                    style={{
+                      transform: darkMode
+                        ? "translateX(20px)"
+                        : "translateX(0)",
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* Panic Key — desktop only */}
+              {!isMobile && (
                 <div
-                  data-ocid="search.loading_state"
-                  className="flex items-center gap-3 px-4 py-4 rounded-xl border"
+                  className="mt-4 px-4 py-3 rounded-xl"
                   style={{
-                    borderColor: "rgba(34,197,94,0.3)",
-                    background: "rgba(34,197,94,0.04)",
+                    background: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(34,197,94,0.05)",
+                    border: `1px solid ${borderColor}`,
                   }}
                 >
-                  <Loader2
-                    className="w-4 h-4 animate-spin"
-                    style={{ color: "#22c55e" }}
-                  />
-                  <span className="text-sm" style={{ color: "#16a34a" }}>
-                    Searching DuckDuckGo...
-                  </span>
-                </div>
-              ) : searchError ? (
-                <div
-                  data-ocid="search.error_state"
-                  className="flex items-center gap-3 px-4 py-4 rounded-xl border border-red-200 bg-red-50"
-                >
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-600">
-                    Search failed. DuckDuckGo may be temporarily unavailable.
-                  </span>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {searchAbstract &&
-                    (searchAbstract.text || searchAbstract.answer) && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="rounded-xl border px-5 py-4 bg-white"
-                        style={{
-                          borderColor: "rgba(34,197,94,0.35)",
-                          background: "rgba(34,197,94,0.03)",
-                        }}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap
-                            className="w-4 h-4"
-                            style={{ color: "#22c55e" }}
-                          />
-                          <span
-                            className="text-xs font-bold uppercase tracking-widest"
-                            style={{ color: "#16a34a" }}
-                          >
-                            Instant Answer
-                          </span>
-                          {searchAbstract.heading && (
-                            <span className="font-semibold text-sm text-foreground ml-1">
-                              {searchAbstract.heading}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-foreground leading-relaxed">
-                          {searchAbstract.text || searchAbstract.answer}
-                        </p>
-                        {searchAbstract.url && (
-                          <a
-                            href={searchAbstract.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 mt-2 text-xs hover:underline"
-                            style={{ color: "#16a34a" }}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            {extractTitle(searchAbstract.url)}
-                          </a>
-                        )}
-                      </motion.div>
-                    )}
+                  <div className="flex items-center gap-2 mb-2">
+                    <Keyboard
+                      className="w-4 h-4"
+                      style={{ color: "#22c55e" }}
+                    />
+                    <p className="text-sm font-semibold">Panic Key</p>
+                    <span
+                      className="ml-auto text-xs px-1.5 py-0.5 rounded-md font-medium"
+                      style={{
+                        background: "rgba(34,197,94,0.12)",
+                        color: "#22c55e",
+                      }}
+                    >
+                      Desktop only
+                    </span>
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: muted }}>
+                    Press this key anywhere to instantly go to Google Classroom.
+                  </p>
 
-                  {searchResults && searchResults.length > 0 && (
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                        {searchResults.length} Related Results
+                  {/* Active saved key indicator */}
+                  {panicKey && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs" style={{ color: muted }}>
+                        Active:
                       </span>
                       <span
-                        data-ocid="search.success_state"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold"
                         style={{
-                          background: "rgba(34,197,94,0.1)",
-                          color: "#16a34a",
-                          borderColor: "rgba(34,197,94,0.3)",
+                          background: "rgba(34,197,94,0.15)",
+                          border: "1px solid rgba(34,197,94,0.4)",
+                          color: "#22c55e",
+                          boxShadow: "0 2px 0 rgba(34,197,94,0.3)",
                         }}
                       >
-                        DuckDuckGo
+                        {panicKey}
                       </span>
+                      <button
+                        type="button"
+                        data-ocid="settings.panic_key.delete_button"
+                        onClick={clearPanicKey}
+                        className="ml-auto flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-opacity hover:opacity-70"
+                        style={{
+                          color: "#ef4444",
+                          background: "rgba(239,68,68,0.08)",
+                          border: "1px solid rgba(239,68,68,0.2)",
+                        }}
+                      >
+                        <X className="w-3 h-3" />
+                        Clear
+                      </button>
                     </div>
                   )}
 
-                  {searchResults && searchResults.length > 0
-                    ? searchResults.map((result, i) => (
-                        <motion.div
-                          key={result.url}
-                          data-ocid={`search.item.${i + 1}`}
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.04 }}
-                          className="group rounded-xl border bg-white px-5 py-4 flex flex-col gap-1.5 transition-shadow hover:shadow-md"
-                          style={{ borderColor: "rgba(34,197,94,0.2)" }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {result.icon &&
-                                result.icon !== "//duckduckgo.com/i/" && (
-                                  <img
-                                    src={`https:${result.icon}`}
-                                    alt=""
-                                    className="w-4 h-4 rounded flex-shrink-0"
-                                    onError={(e) => {
-                                      (
-                                        e.target as HTMLImageElement
-                                      ).style.display = "none";
-                                    }}
-                                  />
-                                )}
-                              <span
-                                className="text-xs font-medium truncate"
-                                style={{ color: "#4b7a5c" }}
-                              >
-                                {result.title}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <button
-                                type="button"
-                                data-ocid={`search.item.${i + 1}`}
-                                onClick={() => loadThroughProxy(result.url)}
-                                disabled={actorLoading || loading}
-                                className="px-3 py-1 rounded-full text-xs font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100"
-                                style={{ background: "#22c55e" }}
-                                title="Open via proxy"
-                              >
-                                Via Proxy
-                              </button>
-                              <a
-                                href={result.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-                                title="Open directly"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            </div>
-                          </div>
-                          <p className="text-sm text-foreground leading-relaxed line-clamp-3">
-                            {result.snippet}
-                          </p>
-                        </motion.div>
-                      ))
-                    : !searchAbstract && (
-                        <div
-                          data-ocid="search.empty_state"
-                          className="flex flex-col items-center justify-center py-10 gap-3"
-                        >
-                          <div
-                            className="w-12 h-12 rounded-full flex items-center justify-center"
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        ref={panicInputRef}
+                        data-ocid="settings.panic_key.input"
+                        type="text"
+                        readOnly
+                        value=""
+                        placeholder={
+                          isCapturing
+                            ? "Press any key..."
+                            : pendingPanicKey
+                              ? `"`
+                              : "Click and press a key..."
+                        }
+                        onFocus={() => setIsCapturing(true)}
+                        onBlur={() => setIsCapturing(false)}
+                        onKeyDown={handlePanicKeyCapture}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none cursor-pointer"
+                        style={{
+                          background: inputBg,
+                          border: isCapturing
+                            ? "1px solid #22c55e"
+                            : `1px solid ${borderColor}`,
+                          color: text,
+                          boxShadow: isCapturing
+                            ? "0 0 0 2px rgba(34,197,94,0.15)"
+                            : "none",
+                          transition: "border 0.15s, box-shadow 0.15s",
+                        }}
+                      />
+                      {/* Show pending key as a badge overlay */}
+                      {pendingPanicKey && !isCapturing && (
+                        <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
+                          <span
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold"
                             style={{
-                              background: "rgba(34,197,94,0.08)",
-                              border: "1px solid rgba(34,197,94,0.2)",
+                              background: "rgba(34,197,94,0.15)",
+                              border: "1px solid rgba(34,197,94,0.4)",
+                              color: "#22c55e",
+                              boxShadow: "0 2px 0 rgba(34,197,94,0.25)",
                             }}
                           >
-                            <Search
-                              className="w-5 h-5"
-                              style={{ color: "rgba(34,197,94,0.5)" }}
-                            />
-                          </div>
-                          <p className="text-sm text-muted-foreground text-center">
-                            No results found for &ldquo;{searchQuery}&rdquo;.
-                            <br />
-                            <span className="text-xs">
-                              Try a different search term.
-                            </span>
-                          </p>
+                            {pendingPanicKey}
+                          </span>
                         </div>
                       )}
-                </div>
-              )}
-            </motion.section>
-          )}
-        </AnimatePresence>
-
-        {/* Proxy Loading indicator */}
-        <AnimatePresence>
-          {loading && (
-            <motion.div
-              data-ocid="proxy.loading_state"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border"
-              style={{
-                borderColor: "rgba(34,197,94,0.3)",
-                background: "rgba(34,197,94,0.04)",
-              }}
-            >
-              <Loader2
-                className="w-4 h-4 animate-spin"
-                style={{ color: "#22c55e" }}
-              />
-              <span className="text-sm" style={{ color: "#16a34a" }}>
-                Fetching via IC canister...
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Proxy Results */}
-        <AnimatePresence>
-          {showProxyResult && response !== null && !loading && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col gap-0"
-            >
-              <div
-                className="flex items-center justify-between px-4 py-3 rounded-t-xl border-b"
-                style={{
-                  background: "rgba(34,197,94,0.05)",
-                  borderColor: "rgba(34,197,94,0.2)",
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                    Proxy Response
-                  </span>
-                  {isError ? (
-                    <span
-                      data-ocid="proxy.error_state"
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200"
-                    >
-                      <AlertTriangle className="w-3 h-3" />
-                      Error
-                    </span>
-                  ) : (
-                    <span
-                      data-ocid="proxy.success_state"
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
-                      style={{
-                        background: "rgba(34,197,94,0.1)",
-                        color: "#16a34a",
-                        borderColor: "rgba(34,197,94,0.3)",
-                      }}
-                    >
-                      {responseType === "html" ? "HTML" : "Text"}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {responseType !== "html" && (
+                    </div>
                     <button
                       type="button"
-                      data-ocid="proxy.copy.button"
-                      onClick={handleCopy}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground bg-white hover:bg-gray-50 border border-border rounded-lg transition-colors"
+                      data-ocid="settings.panic_key.save_button"
+                      onClick={savePanicKey}
+                      disabled={!pendingPanicKey}
+                      className="px-3 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ background: "#22c55e" }}
                     >
-                      {copied ? (
-                        <CheckCheck
-                          className="w-3 h-3"
-                          style={{ color: "#22c55e" }}
-                        />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                      {copied ? "Copied" : "Copy"}
+                      Save
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    data-ocid="proxy.fullscreen.button"
-                    onClick={() => setIsFullscreen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-all hover:opacity-90"
-                    style={{ background: "#22c55e" }}
-                    title="View fullscreen"
-                  >
-                    <Maximize2 className="w-3 h-3" />
-                    <span className="hidden sm:inline">Fullscreen</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-ocid="proxy.reset.button"
-                    onClick={handleReset}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground bg-white hover:bg-gray-50 border border-border rounded-lg transition-colors"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    Reset
-                  </button>
+                  </div>
                 </div>
-              </div>
-
-              <div
-                className="rounded-b-xl overflow-hidden border border-t-0"
-                style={{ borderColor: "rgba(34,197,94,0.2)" }}
-              >
-                {responseType === "html" ? (
-                  <iframe
-                    title="proxy-response"
-                    srcDoc={response}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                    className="w-full border-0"
-                    style={{ height: "600px" }}
-                  />
-                ) : (
-                  <pre
-                    className={`overflow-auto p-4 font-mono text-xs leading-relaxed max-h-[600px] bg-white ${
-                      isError ? "text-red-600" : "text-foreground"
-                    }`}
-                  >
-                    {response}
-                  </pre>
-                )}
-              </div>
+              )}
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Empty state */}
-        <AnimatePresence>
-          {!showSearchResults && !showProxyResult && !loading && (
-            <motion.div
-              data-ocid="proxy.empty_state"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { delay: 0.5 } }}
-              exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-12 gap-3 text-center"
-            >
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(34,197,94,0.08)",
-                  border: "1px solid rgba(34,197,94,0.2)",
-                }}
-              >
-                <Search
-                  className="w-6 h-6"
-                  style={{ color: "rgba(34,197,94,0.5)" }}
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Search privately via DuckDuckGo
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <footer
         className="relative z-10 border-t mt-auto"
         style={{ borderColor: "rgba(34,197,94,0.15)" }}
       >
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            ProxShell &mdash; Private Proxy Search
+          <span className="text-xs" style={{ color: muted }}>
+            ProxShell &mdash; Private Proxy Browser
           </span>
           <a
             href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="text-xs transition-colors hover:opacity-80"
+            style={{ color: muted }}
           >
             &copy; {new Date().getFullYear()} Built with ♥ using caffeine.ai
           </a>
