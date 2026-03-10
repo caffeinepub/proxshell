@@ -3,6 +3,7 @@ import {
   Gamepad2,
   Globe,
   Keyboard,
+  Loader2,
   Moon,
   Settings,
   Sun,
@@ -12,6 +13,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { GamesSidebar } from "./GamesSidebar";
 import { useIsMobile } from "./hooks/use-mobile";
+import { useActor } from "./hooks/useActor";
 
 // Particle canvas component
 function ParticleCanvas({ darkMode }: { darkMode: boolean }) {
@@ -98,7 +100,7 @@ function ParticleCanvas({ darkMode }: { darkMode: boolean }) {
   );
 }
 
-function openInBlankTab(targetUrl: string) {
+function openIframeTab(targetUrl: string) {
   let url = targetUrl.trim();
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     url = `https://${url}`;
@@ -135,9 +137,11 @@ function openInBlankTab(targetUrl: string) {
 
 export default function App() {
   const isMobile = useIsMobile();
+  const { actor, isFetching: actorFetching } = useActor();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [urlInput, setUrlInput] = useState("");
+  const [urlInput, setUrlInput] = useState("google.com");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     try {
       return localStorage.getItem("proxshell-dark") === "true";
@@ -169,7 +173,6 @@ export default function App() {
   useEffect(() => {
     if (isMobile || !panicKey) return;
     const handler = (e: KeyboardEvent) => {
-      // Don't trigger when typing in inputs
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -186,9 +189,47 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [panicKey, isMobile]);
 
-  const handleNavigate = () => {
-    if (!urlInput.trim()) return;
-    openInBlankTab(urlInput);
+  const handleNavigate = async () => {
+    const raw = urlInput.trim();
+    if (!raw) return;
+
+    let url = raw;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = `https://${url}`;
+    }
+
+    // If actor is ready, use the backend proxy
+    if (actor && !actorFetching) {
+      setIsLoading(true);
+      try {
+        const html = await actor.getURL(url);
+
+        // Inject <base href> after <head> if not present
+        let proxiedHtml = html;
+        if (!proxiedHtml.includes("<base")) {
+          proxiedHtml = proxiedHtml.replace(
+            /<head([^>]*)>/i,
+            `<head$1><base href="${url}" target="_blank">`,
+          );
+        }
+
+        const newTab = window.open("about:blank", "_blank");
+        if (newTab) {
+          newTab.document.open();
+          newTab.document.write(proxiedHtml);
+          newTab.document.close();
+        }
+      } catch (err) {
+        console.error("Proxy fetch failed, falling back to iframe:", err);
+        openIframeTab(url);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Fallback: open as iframe
+      openIframeTab(url);
+    }
+
     setUrlInput("");
   };
 
@@ -202,7 +243,6 @@ export default function App() {
   const handlePanicKeyCapture = (e: React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    // Ignore modifier-only keys
     if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
     setPendingPanicKey(e.key);
     setIsCapturing(false);
@@ -347,20 +387,30 @@ export default function App() {
               style={{ color: text }}
               spellCheck={false}
               autoComplete="off"
+              disabled={isLoading}
             />
             <button
               type="button"
               data-ocid="url.submit_button"
               onClick={handleNavigate}
-              disabled={!urlInput.trim()}
-              className="px-5 py-2 rounded-full font-semibold text-white text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={!urlInput.trim() || isLoading}
+              className="flex items-center gap-2 px-5 py-2 rounded-full font-semibold text-white text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ background: "#22c55e" }}
             >
-              Go
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading...</span>
+                </>
+              ) : (
+                "Go"
+              )}
             </button>
           </div>
           <p className="text-center mt-4 text-xs" style={{ color: muted }}>
-            Press Enter or click Go to open the site in a new tab
+            {isLoading
+              ? "Fetching page via proxy..."
+              : "Press Enter or click Go to open the site through the proxy"}
           </p>
         </motion.section>
 
@@ -383,7 +433,7 @@ export default function App() {
             />
           </div>
           <p className="text-sm" style={{ color: muted }}>
-            Type any website URL and browse freely
+            Type any website URL and browse freely via the proxy
           </p>
         </motion.div>
       </main>
