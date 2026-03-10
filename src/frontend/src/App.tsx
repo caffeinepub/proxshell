@@ -5,20 +5,20 @@ import {
   CheckCheck,
   Copy,
   ExternalLink,
+  Gamepad2,
   Globe,
   Loader2,
   Maximize2,
   Minimize2,
   RotateCcw,
   Search,
-  Send,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { GamesSidebar } from "./GamesSidebar";
 
-type Method = "GET" | "POST";
 type ResponseType = "html" | "text" | "idle";
 type ActiveMode = "search" | "proxy";
 
@@ -232,6 +232,9 @@ function ParticleCanvas() {
 export default function App() {
   const { actor, isFetching: actorLoading } = useActor();
 
+  // Sidebar state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -247,16 +250,13 @@ export default function App() {
   const [searchError, setSearchError] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Proxy state
+  // Proxy state (used by Via Proxy button and fullscreen)
   const [url, setUrl] = useState("");
-  const [method, setMethod] = useState<Method>("GET");
-  const [body, setBody] = useState("");
   const [response, setResponse] = useState<string | null>(null);
   const [responseType, setResponseType] = useState<ResponseType>("idle");
   const [loading, setLoading] = useState(false);
   const [isError, setIsError] = useState(false);
   const [copied, setCopied] = useState(false);
-  const urlInputRef = useRef<HTMLInputElement>(null);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>("search");
 
@@ -373,63 +373,6 @@ export default function App() {
     [actor],
   );
 
-  const handleFetch = useCallback(async () => {
-    if (!url.trim()) {
-      toast.error("Enter a URL first");
-      urlInputRef.current?.focus();
-      return;
-    }
-    if (!actor) {
-      toast.error("Backend not ready");
-      return;
-    }
-
-    const targetUrl = url.startsWith("http") ? url : `https://${url}`;
-    setLoading(true);
-    setResponse(null);
-    setIsError(false);
-    setActiveMode("proxy");
-    setIsFullscreen(false);
-
-    try {
-      let result: string;
-      if (method === "GET") {
-        result = await actor.getURL(targetUrl);
-      } else {
-        result = await actor.postURL(targetUrl, body);
-      }
-
-      const errored = isErrorResponse(result);
-      setIsError(errored);
-      const type = errored ? "text" : detectResponseType(result);
-      const finalResult =
-        !errored && type === "html" ? injectBaseTag(result, targetUrl) : result;
-      setResponse(finalResult);
-      setResponseType(type);
-
-      if (errored) {
-        toast.error("Request returned an error");
-      } else {
-        toast.success("Response received");
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setIsError(true);
-      setResponse(msg);
-      setResponseType("text");
-      toast.error("Request failed");
-    } finally {
-      setLoading(false);
-    }
-  }, [url, method, body, actor]);
-
-  const handleUrlKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleFetch();
-    }
-  };
-
   const handleCopy = async () => {
     if (!response) return;
     await navigator.clipboard.writeText(response);
@@ -440,7 +383,6 @@ export default function App() {
 
   const handleReset = () => {
     setUrl("");
-    setBody("");
     setResponse(null);
     setResponseType("idle");
     setIsError(false);
@@ -450,7 +392,7 @@ export default function App() {
     setSearchError(false);
     setActiveMode("search");
     setIsFullscreen(false);
-    urlInputRef.current?.focus();
+    searchInputRef.current?.focus();
   };
 
   const showSearchResults =
@@ -461,6 +403,15 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-white relative">
       <ParticleCanvas />
+
+      {/* Games Sidebar */}
+      <GamesSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onGameClick={(gameUrl) => {
+          window.open(gameUrl, "_blank", "noopener,noreferrer");
+        }}
+      />
 
       {/* Fullscreen Overlay */}
       <AnimatePresence>
@@ -556,7 +507,25 @@ export default function App() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
+          className="relative"
         >
+          {/* Games toggle button — top left */}
+          <button
+            type="button"
+            data-ocid="games.sidebar.toggle"
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{
+              background: "rgba(34,197,94,0.1)",
+              color: "#22c55e",
+              border: "1px solid rgba(34,197,94,0.25)",
+            }}
+            title="Browse Games"
+          >
+            <Gamepad2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Games</span>
+          </button>
+
           <h1
             className="font-display text-5xl font-bold tracking-tight"
             style={{ color: "#22c55e" }}
@@ -579,12 +548,12 @@ export default function App() {
       </header>
 
       <main className="relative z-10 flex-1 max-w-3xl mx-auto w-full px-4 py-8 flex flex-col gap-8">
-        {/* DuckDuckGo Search */}
+        {/* Search */}
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.1 }}
-          aria-label="DuckDuckGo Search"
+          aria-label="Search"
         >
           <div className="flex gap-2">
             <div
@@ -602,7 +571,7 @@ export default function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="Search the web privately..."
+                placeholder="surf the internet."
                 className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground outline-none"
                 spellCheck={false}
               />
@@ -841,8 +810,7 @@ export default function App() {
                             No results found for &ldquo;{searchQuery}&rdquo;.
                             <br />
                             <span className="text-xs">
-                              Try a different search term or fetch a URL
-                              directly.
+                              Try a different search term.
                             </span>
                           </p>
                         </div>
@@ -852,144 +820,6 @@ export default function App() {
             </motion.section>
           )}
         </AnimatePresence>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div
-            className="flex-1 h-px"
-            style={{ background: "rgba(34,197,94,0.15)" }}
-          />
-          <span className="text-xs text-muted-foreground uppercase tracking-widest px-2">
-            or fetch a URL directly
-          </span>
-          <div
-            className="flex-1 h-px"
-            style={{ background: "rgba(34,197,94,0.15)" }}
-          />
-        </div>
-
-        {/* URL Proxy */}
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-          aria-label="URL Proxy"
-        >
-          <div className="green-card rounded-xl overflow-hidden">
-            <div className="flex items-stretch">
-              {/* Method toggle */}
-              <div className="flex border-r border-border">
-                {(["GET", "POST"] as Method[]).map((m) => (
-                  <button
-                    type="button"
-                    key={m}
-                    data-ocid={`proxy.${m.toLowerCase()}.toggle`}
-                    onClick={() => setMethod(m)}
-                    className={`px-4 py-3.5 text-xs font-bold tracking-wider transition-colors ${
-                      method === m
-                        ? "text-white"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    style={method === m ? { background: "#22c55e" } : {}}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-
-              {/* URL input */}
-              <div className="flex-1 flex items-center px-4 gap-2">
-                <Globe className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <input
-                  ref={urlInputRef}
-                  data-ocid="proxy.url.input"
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  onKeyDown={handleUrlKeyDown}
-                  placeholder="https://example.com/api"
-                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none py-3.5"
-                  spellCheck={false}
-                />
-              </div>
-
-              {/* Send button */}
-              <button
-                type="button"
-                data-ocid="proxy.submit_button"
-                onClick={handleFetch}
-                disabled={loading || actorLoading || !url.trim()}
-                className="px-5 py-3.5 text-white text-xs font-bold tracking-wider uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 flex-shrink-0"
-                style={{ background: "#22c55e" }}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span className="hidden sm:inline">Fetching</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Send</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            <AnimatePresence>
-              {method === "POST" && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="border-t border-border px-4 py-2">
-                    <span className="text-xs text-muted-foreground">
-                      Request body
-                    </span>
-                  </div>
-                  <textarea
-                    data-ocid="proxy.body.textarea"
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    placeholder='{"key": "value"}'
-                    rows={4}
-                    className="w-full bg-transparent font-mono text-sm text-foreground placeholder:text-muted-foreground/40 outline-none px-4 pb-4 resize-y"
-                    spellCheck={false}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Quick examples */}
-          <div className="flex flex-wrap gap-2 mt-3 px-1">
-            {[
-              "https://httpbin.org/get",
-              "https://httpbin.org/json",
-              "https://api.github.com",
-            ].map((ex) => (
-              <button
-                type="button"
-                key={ex}
-                onClick={() => {
-                  setUrl(ex);
-                  setMethod("GET");
-                  urlInputRef.current?.focus();
-                }}
-                className="px-3 py-1 rounded-full text-xs font-mono border transition-colors hover:border-green-400 hover:text-green-600"
-                style={{
-                  borderColor: "rgba(34,197,94,0.25)",
-                  color: "#6b7280",
-                }}
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
-        </motion.section>
 
         {/* Proxy Loading indicator */}
         <AnimatePresence>
@@ -1151,7 +981,7 @@ export default function App() {
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                Search privately or enter a URL to fetch
+                Search privately via DuckDuckGo
               </p>
             </motion.div>
           )}

@@ -27,16 +27,11 @@ module {
 
   let httpRequestCycles = 231_000_000_000;
 
-  let browserHeaders : [Header] = [
-    { name = "User-Agent"; value = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" },
-    { name = "Accept"; value = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" },
-    { name = "Accept-Language"; value = "en-US,en;q=0.9" },
-    { name = "Cache-Control"; value = "no-cache" },
-    { name = "Pragma"; value = "no-cache" },
-  ];
-
   public func httpGetRequest(url : Text, extraHeaders : [Header], transform : Transform) : async Text {
-    let headers = browserHeaders.concat(extraHeaders);
+    let headers = extraHeaders.concat([{
+      name = "User-Agent";
+      value = "caffeine.ai";
+    }]);
     let http_request : IC.http_request_args = {
       url;
       max_response_bytes = null;
@@ -57,7 +52,8 @@ module {
   };
 
   public func httpPostRequest(url : Text, extraHeaders : [Header], body : Text, transform : Transform) : async Text {
-    let headers = browserHeaders.concat(extraHeaders).concat([
+    let headers = extraHeaders.concat([
+      { name = "User-Agent"; value = "caffeine.ai" },
       { name = "Idempotency-Key"; value = "Time-" # Time.now().toText() },
     ]);
     let requestBody = body.encodeUtf8();
