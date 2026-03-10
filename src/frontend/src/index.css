@@ -1,0 +1,118 @@
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque[opsz,wght].woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans[wght].woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono[wght].woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme — clean white + green */
+    --background: 1 0 0;
+    --foreground: 0.12 0.01 250;
+
+    --card: 0.98 0.004 150;
+    --card-foreground: 0.12 0.01 250;
+
+    --popover: 1 0 0;
+    --popover-foreground: 0.12 0.01 250;
+
+    --primary: 0.55 0.18 150;
+    --primary-foreground: 1 0 0;
+
+    --secondary: 0.94 0.02 150;
+    --secondary-foreground: 0.25 0.04 150;
+
+    --muted: 0.95 0.008 150;
+    --muted-foreground: 0.48 0.025 200;
+
+    --accent: 0.55 0.18 150;
+    --accent-foreground: 1 0 0;
+
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 1 0 0;
+
+    --border: 0.88 0.02 150;
+    --input: 0.92 0.015 150;
+    --ring: 0.55 0.18 150;
+
+    --radius: 0.75rem;
+
+    --chart-1: 0.55 0.18 150;
+    --chart-2: 0.65 0.15 220;
+    --chart-3: 0.78 0.15 75;
+    --chart-4: 0.68 0.18 320;
+    --chart-5: 0.58 0.2 25;
+
+    --sidebar: 0.97 0.008 150;
+    --sidebar-foreground: 0.12 0.01 250;
+    --sidebar-primary: 0.55 0.18 150;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.94 0.02 150;
+    --sidebar-accent-foreground: 0.25 0.04 150;
+    --sidebar-border: 0.88 0.02 150;
+    --sidebar-ring: 0.55 0.18 150;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "General Sans", sans-serif;
+    min-height: 100vh;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: "JetBrains Mono", monospace;
+  }
+}
+
+@layer utilities {
+  .green-card {
+    background: white;
+    border: 1px solid oklch(0.88 0.04 150);
+    box-shadow: 0 2px 16px oklch(0.55 0.18 150 / 0.06), 0 1px 3px
+      oklch(0.55 0.18 150 / 0.08);
+  }
+
+  .search-shadow {
+    box-shadow: 0 4px 24px oklch(0.55 0.18 150 / 0.12), 0 1px 4px
+      oklch(0.55 0.18 150 / 0.1);
+  }
+
+  .glow-btn {
+    box-shadow: 0 2px 12px oklch(0.55 0.18 150 / 0.35);
+  }
+
+  .glow-btn:hover {
+    box-shadow: 0 4px 20px oklch(0.55 0.18 150 / 0.5);
+  }
+}
