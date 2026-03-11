@@ -12,6 +12,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { GamesSidebar } from "./GamesSidebar";
+import { ProxyViewer } from "./ProxyViewer";
 import { useIsMobile } from "./hooks/use-mobile";
 import { useActor } from "./hooks/useActor";
 
@@ -100,41 +101,6 @@ function ParticleCanvas({ darkMode }: { darkMode: boolean }) {
   );
 }
 
-function openIframeTab(targetUrl: string) {
-  let url = targetUrl.trim();
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = `https://${url}`;
-  }
-
-  const newTab = window.open("about:blank", "_blank");
-  if (!newTab) return;
-
-  const html = `<!DOCTYPE html>
-<html style="margin:0;padding:0;height:100%;width:100%;">
-<head>
-  <meta charset="UTF-8" />
-  <title>${url}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-    }
-  </style>
-</head>
-<body>
-  <iframe src="${url}" allowfullscreen allow="autoplay; fullscreen; microphone; camera"></iframe>
-</body>
-</html>`;
-
-  newTab.document.open();
-  newTab.document.write(html);
-  newTab.document.close();
-}
-
 export default function App() {
   const isMobile = useIsMobile();
   const { actor, isFetching: actorFetching } = useActor();
@@ -160,6 +126,13 @@ export default function App() {
   const [isCapturing, setIsCapturing] = useState(false);
   const panicInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Register service worker
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -189,6 +162,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [panicKey, isMobile]);
 
+  // If hash-based proxy route, render ProxyViewer
+  if (window.location.hash.startsWith("#proxy?url=")) {
+    return <ProxyViewer />;
+  }
+
   const handleNavigate = async () => {
     const raw = urlInput.trim();
     if (!raw) return;
@@ -198,36 +176,15 @@ export default function App() {
       url = `https://${url}`;
     }
 
-    // If actor is ready, use the backend proxy
     if (actor && !actorFetching) {
       setIsLoading(true);
-      try {
-        const html = await actor.getURL(url);
-
-        // Inject <base href> after <head> if not present
-        let proxiedHtml = html;
-        if (!proxiedHtml.includes("<base")) {
-          proxiedHtml = proxiedHtml.replace(
-            /<head([^>]*)>/i,
-            `<head$1><base href="${url}" target="_blank">`,
-          );
-        }
-
-        const newTab = window.open("about:blank", "_blank");
-        if (newTab) {
-          newTab.document.open();
-          newTab.document.write(proxiedHtml);
-          newTab.document.close();
-        }
-      } catch (err) {
-        console.error("Proxy fetch failed, falling back to iframe:", err);
-        openIframeTab(url);
-      } finally {
-        setIsLoading(false);
-      }
+      // Open proxy viewer in new tab via hash routing
+      const proxyUrl = `${window.location.origin}/#proxy?url=${encodeURIComponent(url)}`;
+      window.open(proxyUrl, "_blank", "noopener,noreferrer");
+      setIsLoading(false);
     } else {
-      // Fallback: open as iframe
-      openIframeTab(url);
+      // Fallback: open site directly in new tab when actor isn't ready
+      window.open(url, "_blank", "noopener,noreferrer");
     }
 
     setUrlInput("");
@@ -408,9 +365,7 @@ export default function App() {
             </button>
           </div>
           <p className="text-center mt-4 text-xs" style={{ color: muted }}>
-            {isLoading
-              ? "Fetching page via proxy..."
-              : "Press Enter or click Go to open the site through the proxy"}
+            Press Enter or click Go to open the site through the proxy
           </p>
         </motion.section>
 
